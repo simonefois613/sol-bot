@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+
 <html lang="it">
 <head>
 <meta charset="UTF-8">
@@ -129,7 +130,7 @@
   <div class="controls">
     <div class="input-group input-full">
       <div class="input-label">Claude API Key</div>
-      <input class="input-field" type="password" id="apiKeyInput" placeholder="sk-ant-api03-..." value="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">
+      <input class="input-field" type="hidden" id="apiKeyInput" placeholder="sk-ant-api03-..." value="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">
     </div>
     <div class="input-group">
       <div class="input-label">Capitale (USDC)</div>
@@ -165,7 +166,7 @@
 <div class="card">
   <div class="card-title">Log attività</div>
   <div class="log-box" id="logBox">
-    <div class="log-entry info">[SISTEMA] Connetti Phantom e inserisci Claude API key.</div>
+    <div class="log-entry info">[SISTEMA] Connetti Phantom e avvia il bot.</div>
   </div>
 </div>
 
@@ -281,38 +282,55 @@ function calcMACD(data,fast,slow,sig) {
   return {macdLine:ml,signal:ps,histogram:h};
 }
 
-async function getClaudeSignal(price, ind, capital) {
-  const apiKey = document.getElementById('apiKeyInput').value.trim();
-  if (!apiKey) { log('Inserisci Claude API key!','error'); return null; }
-  const prompt = `Sei un trader quantitativo SOL/USDC 4H. Rispondi SOLO con JSON valido, zero testo extra.
+function getSignal(price, ind) {
+  // ── Stessa logica che Claude userebbe, eseguita localmente ──
+  const emaBull  = ind.ema20 > ind.ema50;
+  const emaDiff  = ((ind.ema20 - ind.ema50) / ind.ema50) * 100; // % distanza
+  const macdPos  = ind.macdHist > 0;
+  const macdStrong = Math.abs(ind.macdHist) > ind.atr * 0.01;
+  const volOk    = ind.volRatio >= 1.0;
+  const volStrong= ind.volRatio >= 1.3;
 
-DATI:
-Prezzo: $${price.toFixed(2)}
-EMA20: $${ind.ema20.toFixed(2)} | EMA50: $${ind.ema50.toFixed(2)} | Trend: ${ind.ema20>ind.ema50?'RIALZISTA':'RIBASSISTA'}
-MACD hist: ${ind.macdHist?.toFixed(4)} | Vol ratio: ${ind.volRatio.toFixed(2)}x
-ATR14: $${ind.atr.toFixed(2)}
-Posizione aperta: ${inPosition?`SI @ $${entryPrice?.toFixed(2)} TP=$${currentTP?.toFixed(2)} SL=$${currentSL?.toFixed(2)}`:'NO'}
+  let azione = 'HOLD';
+  let confidenza = 5;
+  let motivazione = 'Nessun segnale chiaro';
 
-REGOLE:
-BUY: EMA20>EMA50 AND MACD_hist>0 AND volRatio>1.0 AND non in posizione
-SELL: EMA20<EMA50 OR MACD_hist fortemente negativo, chiudi posizione
-HOLD: tutto il resto
-SL = entry - 1.5*ATR | TP = entry + 3*ATR
+  // ── BUY conditions ──
+  if (!inPosition && emaBull && macdPos && volOk) {
+    azione = 'BUY';
+    confidenza = 6;
+    motivazione = 'EMA rialzista, MACD positivo, volume ok';
+    if (macdStrong) { confidenza++; motivazione = 'MACD forte, trend confermato'; }
+    if (volStrong)  { confidenza++; motivazione = 'Volume elevato, momentum rialzista'; }
+    if (emaDiff > 1) { confidenza = Math.min(confidenza+1, 10); }
+  }
 
-Rispondi SOLO JSON:
-{"azione":"BUY","confidenza":8,"stop_loss":84.5,"take_profit":92.3,"motivazione":"EMA rialzista MACD positivo volume ok"}`;
+  // ── SELL / CLOSE conditions ──
+  else if (inPosition && (!emaBull || (macdPos === false && macdStrong))) {
+    azione = 'SELL';
+    confidenza = 7;
+    motivazione = !emaBull ? 'EMA ribassista, chiudi posizione' : 'MACD negativo forte, exit';
+  }
 
-  try {
-    const resp = await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,messages:[{role:'user',content:prompt}]})
-    });
-    if (!resp.ok) { const e=await resp.json(); log('Claude error: '+(e.error?.message||resp.status),'error'); return null; }
-    const data = await resp.json();
-    const text = data.content.map(b=>b.text||'').join('').trim().replace(/```json|```/g,'');
-    return JSON.parse(text);
-  } catch(e) { log('Errore Claude: '+e.message,'error'); return null; }
+  // ── HOLD dettagliato ──
+  else if (!inPosition && emaBull && !macdPos) {
+    motivazione = 'Trend rialzista ma MACD non conferma, attendi';
+    confidenza = 4;
+  } else if (!inPosition && !emaBull) {
+    motivazione = 'Trend ribassista, nessun entry';
+    confidenza = 3;
+  } else if (inPosition) {
+    motivazione = `Posizione aperta @ $${entryPrice?.toFixed(2)}, gestione in corso`;
+    confidenza = 6;
+  }
+
+  return {
+    azione,
+    confidenza,
+    stop_loss:   azione === 'BUY' ? price - 1.5 * ind.atr : (currentSL || null),
+    take_profit: azione === 'BUY' ? price + 3.0 * ind.atr : (currentTP || null),
+    motivazione
+  };
 }
 
 async function executeSwap(direction, usdcAmount) {
@@ -450,8 +468,8 @@ async function botCycle() {
   if (!ind) return;
   updateIndicatorUI(ind);
 
-  log('Richiesta segnale a Claude AI...','info');
-  const signal = await getClaudeSignal(price, ind, capital);
+  log('Analisi indicatori in corso...','info');
+  const signal = getSignal(price, ind);
   if (!signal) return;
   updateSignalUI(signal);
 
@@ -488,7 +506,7 @@ async function botCycle() {
 }
 
 async function startBot() {
-  if (!document.getElementById('apiKeyInput').value.trim()) { log('Inserisci Claude API key!','error'); return; }
+  // API key non più necessaria - logica locale
   if (!walletConnected) { log('Connetti prima Phantom!','error'); return; }
   botRunning=true;
   const ms=(parseInt(document.getElementById('intervalInput').value)||15)*60*1000;
@@ -525,5 +543,6 @@ window.addEventListener('load', async () => {
   }
 });
 </script>
+
 </body>
-</html
+</html>
