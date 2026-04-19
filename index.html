@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SOL/USDC Bot</title>
+<script src="https://unpkg.com/@solana/web3.js@1.98.0/lib/index.iife.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap');
+  :root {
+    --bg:#060a10;--panel:#0d1520;--border:#1a2d45;
+    --green:#00f5a0;--red:#ff4365;--blue:#0af;--yellow:#f5c400;
+    --text:#c8dff0;--muted:#4a6a8a;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:'Space Mono',monospace;min-height:100vh;padding:20px 16px 40px;max-width:480px;margin:0 auto;}
+  header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid var(--border);}
+  header h1{font-family:'Syne',sans-serif;font-weight:800;font-size:1.3rem;color:var(--green);}
+  .live-dot{width:8px;height:8px;background:var(--muted);border-radius:50%;animation:pulse 1.5s infinite;}
+  .live-dot.on{background:var(--green);box-shadow:0 0 8px var(--green);}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px;}
+  .card-title{font-family:'Syne',sans-serif;font-size:.65rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:2px;margin-bottom:10px;}
+  .price-main{font-family:'Syne',sans-serif;font-size:2rem;font-weight:800;color:#fff;}
+  .price-change{font-size:.85rem;font-weight:700;margin-left:8px;}
+  .up{color:var(--green);}.down{color:var(--red);}
+  .ind-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .ind-item{background:#0a1420;border-radius:8px;padding:9px 11px;}
+  .ind-label{font-size:.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:3px;}
+  .ind-value{font-size:.9rem;font-weight:700;}
+  .signal-box{border-radius:10px;padding:16px;margin-bottom:12px;border:1px solid var(--border);position:relative;overflow:hidden;background:var(--panel);}
+  .signal-box::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--muted);}
+  .signal-box.buy{background:rgba(0,245,160,.07);}.signal-box.buy::before{background:var(--green);}
+  .signal-box.sell{background:rgba(255,67,101,.07);}.signal-box.sell::before{background:var(--red);}
+  .signal-box.hold{background:rgba(0,170,255,.07);}.signal-box.hold::before{background:var(--blue);}
+  .signal-action{font-family:'Syne',sans-serif;font-size:1.7rem;font-weight:800;margin-bottom:4px;color:var(--muted);}
+  .signal-box.buy .signal-action{color:var(--green);}
+  .signal-box.sell .signal-action{color:var(--red);}
+  .signal-box.hold .signal-action{color:var(--blue);}
+  .confidence-bar{height:4px;background:var(--border);border-radius:2px;margin:8px 0;overflow:hidden;}
+  .confidence-fill{height:100%;border-radius:2px;background:var(--green);transition:width .6s ease;}
+  .signal-note{font-size:.75rem;color:var(--text);opacity:.8;line-height:1.5;}
+  .tpsl-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;}
+  .tpsl-card{padding:11px;border-radius:10px;border:1px solid var(--border);background:var(--panel);}
+  .tpsl-label{font-size:.6rem;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:3px;}
+  .tpsl-card.tp .tpsl-label{color:var(--green);}.tpsl-card.sl .tpsl-label{color:var(--red);}
+  .tpsl-value{font-family:'Syne',sans-serif;font-size:1rem;font-weight:700;color:#fff;}
+  .mode-toggle{display:flex;background:#0a1420;border-radius:8px;padding:3px;margin-bottom:12px;}
+  .mode-btn{flex:1;padding:8px;border:none;border-radius:6px;font-family:'Syne',sans-serif;font-size:.75rem;font-weight:700;cursor:pointer;background:transparent;color:var(--muted);transition:all .2s;}
+  .mode-btn.active{background:var(--panel);color:var(--text);border:1px solid var(--border);}
+  .controls{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .input-group{display:flex;flex-direction:column;gap:5px;}
+  .input-label{font-size:.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:1.5px;}
+  .input-field{background:#0a1420;border:1px solid var(--border);border-radius:8px;padding:9px 11px;color:var(--text);font-family:'Space Mono',monospace;font-size:.82rem;width:100%;outline:none;transition:border-color .2s;}
+  .input-field:focus{border-color:var(--blue);}
+  .input-full{grid-column:1 / -1;}
+  .btn{width:100%;padding:13px;border:none;border-radius:10px;font-family:'Syne',sans-serif;font-size:.95rem;font-weight:800;cursor:pointer;transition:all .2s;margin-bottom:8px;}
+  .btn:hover{opacity:.9;transform:translateY(-1px);}
+  .btn:disabled{opacity:.4;cursor:not-allowed;transform:none;}
+  .btn-green{background:var(--green);color:#060a10;}
+  .btn-outline-red{background:transparent;color:var(--red);border:1px solid var(--red);}
+  .btn-outline-red:hover{background:rgba(255,67,101,.1);}
+  .btn-blue{background:var(--blue);color:#060a10;}
+  .swap-status{background:#0a1420;border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:.75rem;display:none;}
+  .swap-status.visible{display:block;}
+  .swap-link{color:var(--blue);text-decoration:underline;font-size:.7rem;}
+  .log-box{background:#060c14;border:1px solid var(--border);border-radius:10px;padding:10px;height:150px;overflow-y:auto;font-size:.7rem;line-height:1.9;}
+  .log-entry{color:var(--muted);}
+  .log-entry.info{color:var(--blue);}.log-entry.success{color:var(--green);}
+  .log-entry.warning{color:var(--yellow);}.log-entry.error{color:var(--red);}
+  .status-bar{display:flex;justify-content:space-between;font-size:.65rem;color:var(--muted);margin-top:12px;padding-top:12px;border-top:1px solid var(--border);}
+  .wallet-pill{font-size:.7rem;color:var(--blue);background:rgba(0,170,255,.08);padding:4px 10px;border-radius:6px;margin-bottom:10px;display:inline-block;}
+  .disclaimer{font-size:.62rem;color:var(--muted);text-align:center;margin-top:18px;line-height:1.6;opacity:.5;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>⚡ SOL/USDC BOT</h1>
+  <div style="display:flex;align-items:center;gap:8px;font-size:.68rem;color:var(--muted)">
+    <div class="live-dot" id="liveDot"></div>
+    <span id="statusLabel">OFFLINE</span>
+  </div>
+</header>
+
+<div class="card">
+  <div class="card-title">Solana · Prezzo live</div>
+  <div>
+    <span class="price-main" id="priceDisplay">$---.--</span>
+    <span class="price-change" id="priceChange">--</span>
+  </div>
+  <div style="font-size:.68rem;color:var(--muted);margin-top:4px" id="lastUpdate">--</div>
+</div>
+
+<div class="card">
+  <div class="card-title">Indicatori tecnici (4H)</div>
+  <div class="ind-grid">
+    <div class="ind-item"><div class="ind-label">EMA 20</div><div class="ind-value" id="ema20">---</div></div>
+    <div class="ind-item"><div class="ind-label">EMA 50</div><div class="ind-value" id="ema50">---</div></div>
+    <div class="ind-item"><div class="ind-label">MACD Hist</div><div class="ind-value" id="macdVal">---</div></div>
+    <div class="ind-item"><div class="ind-label">ATR 14</div><div class="ind-value" id="atrVal">---</div></div>
+  </div>
+</div>
+
+<div class="signal-box" id="signalBox">
+  <div class="signal-action" id="signalAction">IN ATTESA</div>
+  <div style="display:flex;justify-content:space-between;font-size:.72rem;color:var(--muted)">
+    <span>Confidenza: <strong id="confScore">--/10</strong></span>
+    <span id="signalTime">--</span>
+  </div>
+  <div class="confidence-bar"><div class="confidence-fill" id="confBar" style="width:0%"></div></div>
+  <div class="signal-note" id="signalNote">Avvia il bot per ricevere segnali Claude AI.</div>
+</div>
+
+<div class="tpsl-row">
+  <div class="tpsl-card tp"><div class="tpsl-label">Take Profit</div><div class="tpsl-value" id="tpValue">---</div></div>
+  <div class="tpsl-card sl"><div class="tpsl-label">Stop Loss</div><div class="tpsl-value" id="slValue">---</div></div>
+</div>
+
+<div class="swap-status" id="swapStatus"></div>
+
+<div class="card">
+  <div class="card-title">Configurazione</div>
+  <div class="wallet-pill" id="walletAddr">Wallet non connesso</div>
+  <div class="mode-toggle">
+    <button class="mode-btn active" id="modePaper" onclick="setMode('paper')">📄 Paper Trading</button>
+    <button class="mode-btn" id="modeLive" onclick="setMode('live')">⚡ Live Trading</button>
+  </div>
+  <div class="controls">
+    <div class="input-group input-full">
+      <div class="input-label">Claude API Key</div>
+      <input class="input-field" type="password" id="apiKeyInput" placeholder="sk-ant-api03-..." value="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">
+    </div>
+    <div class="input-group">
+      <div class="input-label">Capitale (USDC)</div>
+      <input class="input-field" type="number" id="capitalInput" value="20" min="1">
+    </div>
+    <div class="input-group">
+      <div class="input-label">Intervallo (min)</div>
+      <input class="input-field" type="number" id="intervalInput" value="15" min="5" max="240">
+    </div>
+    <div class="input-group">
+      <div class="input-label">Rischio % trade</div>
+      <input class="input-field" type="number" id="riskInput" value="2" min="0.5" max="5" step="0.5">
+    </div>
+    <div class="input-group">
+      <div class="input-label">Stop loss streak</div>
+      <input class="input-field" type="number" id="streakInput" value="3" min="1" max="10">
+    </div>
+    <div class="input-group">
+      <div class="input-label">Min confidenza</div>
+      <input class="input-field" type="number" id="minConfInput" value="7" min="1" max="10">
+    </div>
+    <div class="input-group">
+      <div class="input-label">Slippage (bps)</div>
+      <input class="input-field" type="number" id="slippageInput" value="50" min="10" max="500">
+    </div>
+  </div>
+</div>
+
+<button class="btn btn-blue" id="connectBtn" onclick="connectWallet()">🔗 Connetti Phantom</button>
+<button class="btn btn-green" id="startBtn" onclick="startBot()" style="display:none">▶ Avvia Bot</button>
+<button class="btn btn-outline-red" id="stopBtn" onclick="stopBot()" style="display:none">■ Ferma Bot</button>
+
+<div class="card">
+  <div class="card-title">Log attività</div>
+  <div class="log-box" id="logBox">
+    <div class="log-entry info">[SISTEMA] Connetti Phantom e inserisci Claude API key.</div>
+  </div>
+</div>
+
+<div class="status-bar">
+  <span>Trades: <strong id="tradeCount">0</strong></span>
+  <span>Loss streak: <strong id="lossStreak">0</strong></span>
+  <span>PnL: <strong id="sessionPnl" class="up">$0.00</strong></span>
+</div>
+
+<div class="disclaimer">
+  ⚠️ Testa SEMPRE in Paper Trading prima di usare fondi reali.<br>
+  Non è consulenza finanziaria. Mercati crypto = alto rischio.
+</div>
+
+<script>
+const SOL_MINT  = 'So11111111111111111111111111111111111111112';
+const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+
+let botRunning=false, botInterval=null;
+let walletConnected=false, walletPubkey=null, connection=null;
+let tradeMode='paper';
+let tradeCount=0, consecutiveLosses=0, sessionPnl=0;
+let inPosition=false, entryPrice=null, currentTP=null, currentSL=null;
+
+function log(msg, type='info') {
+  const box = document.getElementById('logBox');
+  const t = new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const el = document.createElement('div');
+  el.className = `log-entry ${type}`;
+  el.textContent = `[${t}] ${msg}`;
+  box.appendChild(el);
+  box.scrollTop = box.scrollHeight;
+}
+
+function setMode(mode) {
+  tradeMode = mode;
+  document.getElementById('modePaper').classList.toggle('active', mode==='paper');
+  document.getElementById('modeLive').classList.toggle('active', mode==='live');
+  if (mode==='live') log('⚡ LIVE TRADING attivo — i trade saranno REALI!','warning');
+  else log('📄 Paper Trading attivo — nessun trade reale','info');
+}
+
+async function connectWallet() {
+  try {
+    if (!window.solana?.isPhantom) {
+      alert('Phantom non trovato!\nInstalla da phantom.app su browser desktop con estensione.');
+      return;
+    }
+    log('Connessione Phantom...','info');
+    const resp = await window.solana.connect();
+    walletPubkey = resp.publicKey;
+    walletConnected = true;
+    connection = new solanaWeb3.Connection('https://api.mainnet-beta.solana.com','confirmed');
+    const short = walletPubkey.toString().slice(0,4)+'...'+walletPubkey.toString().slice(-4);
+    document.getElementById('walletAddr').textContent = '🟢 '+short;
+    document.getElementById('connectBtn').style.display='none';
+    document.getElementById('startBtn').style.display='block';
+    log(`Wallet connesso: ${short}`,'success');
+  } catch(e) { log('Connessione annullata','warning'); }
+}
+
+async function fetchPrice() {
+  try {
+    const r = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbol=SOLUSDT');
+    const d = await r.json();
+    return { price:parseFloat(d.lastPrice), change:parseFloat(d.priceChangePercent) };
+  } catch(e) { log('Errore fetch prezzo','error'); return null; }
+}
+
+async function fetchIndicators() {
+  try {
+    const r = await fetch('https://api.binance.com/api/v3/klines?symbol=SOLUSDT&interval=4h&limit=60');
+    const candles = await r.json();
+    const closes  = candles.map(c=>parseFloat(c[4]));
+    const highs   = candles.map(c=>parseFloat(c[2]));
+    const lows    = candles.map(c=>parseFloat(c[3]));
+    const volumes = candles.map(c=>parseFloat(c[5]));
+    const ema20   = calcEMA(closes,20);
+    const ema50   = calcEMA(closes,50);
+    const atr     = calcATR(highs,lows,closes,14);
+    const macd    = calcMACD(closes,12,26,9);
+    const volAvg  = volumes.slice(-20).reduce((a,b)=>a+b,0)/20;
+    const volRatio= volumes[volumes.length-1]/volAvg;
+    return {
+      ema20:ema20[ema20.length-1], ema50:ema50[ema50.length-1],
+      atr:atr[atr.length-1],
+      macdLine:macd.macdLine[macd.macdLine.length-1],
+      macdSignal:macd.signal[macd.signal.length-1],
+      macdHist:macd.histogram[macd.histogram.length-1],
+      volRatio
+    };
+  } catch(e) { log('Errore fetch indicatori: '+e.message,'error'); return null; }
+}
+
+function calcEMA(data,period) {
+  const k=2/(period+1); let ema=[data[0]];
+  for(let i=1;i<data.length;i++) ema.push(data[i]*k+ema[i-1]*(1-k));
+  return ema;
+}
+function calcATR(H,L,C,period) {
+  let trs=[H[0]-L[0]];
+  for(let i=1;i<H.length;i++) trs.push(Math.max(H[i]-L[i],Math.abs(H[i]-C[i-1]),Math.abs(L[i]-C[i-1])));
+  let atr=[trs.slice(0,period).reduce((a,b)=>a+b,0)/period];
+  for(let i=period;i<trs.length;i++) atr.push((atr[atr.length-1]*(period-1)+trs[i])/period);
+  return atr;
+}
+function calcMACD(data,fast,slow,sig) {
+  const ef=calcEMA(data,fast), es=calcEMA(data,slow);
+  const ml=ef.map((v,i)=>v-es[i]);
+  const s=calcEMA(ml.slice(slow-1),sig);
+  const ps=[...new Array(slow-1).fill(null),...s];
+  const h=ml.map((v,i)=>ps[i]!==null?v-ps[i]:null);
+  return {macdLine:ml,signal:ps,histogram:h};
+}
+
+async function getClaudeSignal(price, ind, capital) {
+  const apiKey = document.getElementById('apiKeyInput').value.trim();
+  if (!apiKey) { log('Inserisci Claude API key!','error'); return null; }
+  const prompt = `Sei un trader quantitativo SOL/USDC 4H. Rispondi SOLO con JSON valido, zero testo extra.
+
+DATI:
+Prezzo: $${price.toFixed(2)}
+EMA20: $${ind.ema20.toFixed(2)} | EMA50: $${ind.ema50.toFixed(2)} | Trend: ${ind.ema20>ind.ema50?'RIALZISTA':'RIBASSISTA'}
+MACD hist: ${ind.macdHist?.toFixed(4)} | Vol ratio: ${ind.volRatio.toFixed(2)}x
+ATR14: $${ind.atr.toFixed(2)}
+Posizione aperta: ${inPosition?`SI @ $${entryPrice?.toFixed(2)} TP=$${currentTP?.toFixed(2)} SL=$${currentSL?.toFixed(2)}`:'NO'}
+
+REGOLE:
+BUY: EMA20>EMA50 AND MACD_hist>0 AND volRatio>1.0 AND non in posizione
+SELL: EMA20<EMA50 OR MACD_hist fortemente negativo, chiudi posizione
+HOLD: tutto il resto
+SL = entry - 1.5*ATR | TP = entry + 3*ATR
+
+Rispondi SOLO JSON:
+{"azione":"BUY","confidenza":8,"stop_loss":84.5,"take_profit":92.3,"motivazione":"EMA rialzista MACD positivo volume ok"}`;
+
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,messages:[{role:'user',content:prompt}]})
+    });
+    if (!resp.ok) { const e=await resp.json(); log('Claude error: '+(e.error?.message||resp.status),'error'); return null; }
+    const data = await resp.json();
+    const text = data.content.map(b=>b.text||'').join('').trim().replace(/```json|```/g,'');
+    return JSON.parse(text);
+  } catch(e) { log('Errore Claude: '+e.message,'error'); return null; }
+}
+
+async function executeSwap(direction, usdcAmount) {
+  if (!walletConnected) { log('Wallet non connesso','error'); return {success:false}; }
+  const slippage = parseInt(document.getElementById('slippageInput').value)||50;
+  let inputMint,outputMint,amount;
+  const price = parseFloat(document.getElementById('priceDisplay').textContent.replace('$',''));
+  if (direction==='buy') {
+    inputMint=USDC_MINT; outputMint=SOL_MINT;
+    amount=Math.floor(usdcAmount*1e6);
+    log(`🔄 BUY: $${usdcAmount} USDC → SOL`,'info');
+  } else {
+    inputMint=SOL_MINT; outputMint=USDC_MINT;
+    const solAmt = usdcAmount/price;
+    amount=Math.floor(solAmt*1e9);
+    log(`🔄 SELL: ~${(usdcAmount/price).toFixed(4)} SOL → USDC`,'info');
+  }
+  try {
+    showSwapStatus('⏳ Ricerca route Jupiter...');
+    const qr = await fetch(`https://quote-api.jup.ag/v6/quote?inputMint=${inputMint}&outputMint=${outputMint}&amount=${amount}&slippageBps=${slippage}`);
+    if (!qr.ok) throw new Error('Quote fallita '+qr.status);
+    const quote = await qr.json();
+    const outAmt = direction==='buy'
+      ? (parseInt(quote.outAmount)/1e9).toFixed(4)+' SOL'
+      : '$'+(parseInt(quote.outAmount)/1e6).toFixed(2);
+    log(`✅ Quote: ricevi ~${outAmt} | Impact: ${parseFloat(quote.priceImpactPct).toFixed(3)}%`,'info');
+    showSwapStatus(`✅ Quote OK → ${outAmt}`);
+
+    const sr = await fetch('https://quote-api.jup.ag/v6/swap',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({quoteResponse:quote,userPublicKey:walletPubkey.toString(),wrapAndUnwrapSol:true,dynamicComputeUnitLimit:true,prioritizationFeeLamports:'auto'})
+    });
+    if (!sr.ok) throw new Error('Swap tx fallita '+sr.status);
+    const {swapTransaction} = await sr.json();
+
+    showSwapStatus('⏳ Approva su Phantom...');
+    log('📱 Approva la transazione su Phantom','warning');
+    const txBuf = Uint8Array.from(atob(swapTransaction),c=>c.charCodeAt(0));
+    const tx = solanaWeb3.VersionedTransaction.deserialize(txBuf);
+    const signed = await window.solana.signTransaction(tx);
+
+    showSwapStatus('⏳ Invio alla blockchain...');
+    const txid = await connection.sendRawTransaction(signed.serialize(),{skipPreflight:false,maxRetries:3});
+    await connection.confirmTransaction(txid,'confirmed');
+
+    log(`✅ SWAP OK! TX: ${txid.slice(0,8)}...`,'success');
+    showSwapStatus(`✅ Eseguito! <a class="swap-link" href="https://solscan.io/tx/${txid}" target="_blank">Vedi su Solscan ↗</a>`,true);
+    return {success:true,txid};
+  } catch(e) {
+    log('❌ Swap fallito: '+e.message,'error');
+    showSwapStatus('❌ '+e.message);
+    return {success:false};
+  }
+}
+
+function showSwapStatus(html, isHtml=false) {
+  const el = document.getElementById('swapStatus');
+  el.classList.add('visible');
+  if (isHtml) el.innerHTML=html; else el.textContent=html;
+}
+
+function checkTPSL(price) {
+  if (!inPosition||!currentTP||!currentSL) return null;
+  if (price>=currentTP) { const p=currentTP-entryPrice; sessionPnl+=p; consecutiveLosses=0; log(`🎯 TP @ $${price.toFixed(2)} (+$${p.toFixed(2)})`,'success'); return 'tp'; }
+  if (price<=currentSL) { const l=entryPrice-currentSL; sessionPnl-=l; consecutiveLosses++; log(`🛑 SL @ $${price.toFixed(2)} (-$${l.toFixed(2)})`,'error'); document.getElementById('lossStreak').textContent=consecutiveLosses; return 'sl'; }
+  return null;
+}
+
+function updatePriceUI(d) {
+  document.getElementById('priceDisplay').textContent=`$${d.price.toFixed(2)}`;
+  const el=document.getElementById('priceChange');
+  el.textContent=`${d.change>=0?'+':''}${d.change.toFixed(2)}%`;
+  el.className='price-change '+(d.change>=0?'up':'down');
+  document.getElementById('lastUpdate').textContent='Aggiornato: '+new Date().toLocaleTimeString('it-IT');
+}
+
+function updateIndicatorUI(ind) {
+  const e20=document.getElementById('ema20'), e50=document.getElementById('ema50');
+  e20.textContent=`$${ind.ema20.toFixed(2)}`; e50.textContent=`$${ind.ema50.toFixed(2)}`;
+  e20.style.color=ind.ema20>ind.ema50?'var(--green)':'var(--red)';
+  const mEl=document.getElementById('macdVal');
+  mEl.textContent=(ind.macdHist>=0?'+':'')+ind.macdHist?.toFixed(4);
+  mEl.style.color=ind.macdHist>=0?'var(--green)':'var(--red)';
+  document.getElementById('atrVal').textContent=`$${ind.atr.toFixed(2)}`;
+}
+
+function updateSignalUI(signal) {
+  const box=document.getElementById('signalBox');
+  box.className='signal-box '+signal.azione.toLowerCase();
+  document.getElementById('signalAction').textContent=signal.azione+(tradeMode==='paper'?' (PAPER)':'');
+  document.getElementById('confScore').textContent=signal.confidenza+'/10';
+  document.getElementById('confBar').style.width=(signal.confidenza*10)+'%';
+  document.getElementById('signalNote').textContent=signal.motivazione;
+  document.getElementById('signalTime').textContent=new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
+  if (signal.stop_loss) document.getElementById('slValue').textContent=`$${signal.stop_loss.toFixed(2)}`;
+  if (signal.take_profit) document.getElementById('tpValue').textContent=`$${signal.take_profit.toFixed(2)}`;
+}
+
+function updateStatsUI() {
+  document.getElementById('tradeCount').textContent=tradeCount;
+  document.getElementById('lossStreak').textContent=consecutiveLosses;
+  const el=document.getElementById('sessionPnl');
+  el.textContent=`$${sessionPnl.toFixed(2)}`;
+  el.className=sessionPnl>=0?'up':'down';
+}
+
+async function botCycle() {
+  const capital   = parseFloat(document.getElementById('capitalInput').value)||20;
+  const maxStreak = parseInt(document.getElementById('streakInput').value)||3;
+  const minConf   = parseInt(document.getElementById('minConfInput').value)||7;
+  const risk      = parseFloat(document.getElementById('riskInput').value)/100;
+  const tradeSize = capital*risk;
+
+  if (consecutiveLosses>=maxStreak) { log(`⛔ ${maxStreak} loss consecutive. Bot fermato.`,'error'); stopBot(); return; }
+
+  log('--- Nuovo ciclo ---','info');
+
+  const priceData = await fetchPrice();
+  if (!priceData) return;
+  updatePriceUI(priceData);
+  const price = priceData.price;
+
+  if (inPosition) {
+    const tpsl = checkTPSL(price);
+    if (tpsl) {
+      if (tradeMode==='live') await executeSwap('sell', tradeSize);
+      inPosition=false; entryPrice=null; currentTP=null; currentSL=null;
+      updateStatsUI(); return;
+    }
+    log(`📊 Posizione aperta @ $${entryPrice?.toFixed(2)} | TP:$${currentTP?.toFixed(2)} SL:$${currentSL?.toFixed(2)}`,'info');
+  }
+
+  const ind = await fetchIndicators();
+  if (!ind) return;
+  updateIndicatorUI(ind);
+
+  log('Richiesta segnale a Claude AI...','info');
+  const signal = await getClaudeSignal(price, ind, capital);
+  if (!signal) return;
+  updateSignalUI(signal);
+
+  const emoji = {BUY:'🟢',SELL:'🔴',HOLD:'🔵'}[signal.azione]||'⚪';
+  log(`${emoji} ${signal.azione} | Conf:${signal.confidenza}/10 | ${signal.motivazione}`,'success');
+
+  if (signal.azione==='BUY' && signal.confidenza>=minConf && !inPosition) {
+    tradeCount++;
+    if (tradeMode==='paper') {
+      log(`📄 [PAPER] BUY $${tradeSize.toFixed(2)} USDC @ $${price.toFixed(2)}`,'warning');
+      inPosition=true; entryPrice=price;
+      currentTP=signal.take_profit||price+3*ind.atr;
+      currentSL=signal.stop_loss||price-1.5*ind.atr;
+    } else {
+      log(`⚡ [LIVE] Esecuzione BUY $${tradeSize.toFixed(2)} USDC...`,'warning');
+      const res = await executeSwap('buy', tradeSize);
+      if (res?.success) {
+        inPosition=true; entryPrice=price;
+        currentTP=signal.take_profit||price+3*ind.atr;
+        currentSL=signal.stop_loss||price-1.5*ind.atr;
+      }
+    }
+  } else if (signal.azione==='SELL' && inPosition) {
+    if (tradeMode==='paper') {
+      log(`📄 [PAPER] SELL @ $${price.toFixed(2)}`,'warning');
+      sessionPnl+=price-(entryPrice||price);
+    } else {
+      await executeSwap('sell', tradeSize);
+    }
+    inPosition=false; entryPrice=null; currentTP=null; currentSL=null;
+  }
+
+  updateStatsUI();
+}
+
+async function startBot() {
+  if (!document.getElementById('apiKeyInput').value.trim()) { log('Inserisci Claude API key!','error'); return; }
+  if (!walletConnected) { log('Connetti prima Phantom!','error'); return; }
+  botRunning=true;
+  const ms=(parseInt(document.getElementById('intervalInput').value)||15)*60*1000;
+  document.getElementById('startBtn').style.display='none';
+  document.getElementById('stopBtn').style.display='block';
+  document.getElementById('statusLabel').textContent=tradeMode==='live'?'LIVE ⚡':'PAPER 📄';
+  document.getElementById('liveDot').classList.add('on');
+  log(`Bot avviato [${tradeMode.toUpperCase()}] · ciclo ogni ${ms/60000} min`,'success');
+  await botCycle();
+  botInterval=setInterval(botCycle,ms);
+}
+
+function stopBot() {
+  botRunning=false; clearInterval(botInterval);
+  document.getElementById('startBtn').style.display='block';
+  document.getElementById('stopBtn').style.display='none';
+  document.getElementById('statusLabel').textContent='OFFLINE';
+  document.getElementById('liveDot').classList.remove('on');
+  log('Bot fermato.','warning');
+}
+
+window.addEventListener('load', async () => {
+  if (window.solana?.isPhantom) {
+    try {
+      const resp = await window.solana.connect({onlyIfTrusted:true});
+      walletPubkey=resp.publicKey; walletConnected=true;
+      connection=new solanaWeb3.Connection('https://api.mainnet-beta.solana.com','confirmed');
+      const short=walletPubkey.toString().slice(0,4)+'...'+walletPubkey.toString().slice(-4);
+      document.getElementById('walletAddr').textContent='🟢 '+short;
+      document.getElementById('connectBtn').style.display='none';
+      document.getElementById('startBtn').style.display='block';
+      log(`Phantom auto-connesso: ${short}`,'success');
+    } catch(e) {}
+  }
+});
+</script>
+</body>
+</html
